@@ -1,64 +1,125 @@
 #!/bin/sh
-# pm-conclusions（脚手架——把占位实现替换为真实逻辑）
+# pm-conclusions — 汇总各文档「给 PM 的结论」小节为一份独立交接文档
 #
 # toolbox-script
 # format: v1
 # name: pm-conclusions
-# summary: pm-conclusions
+# summary: 扫描 docs/ 与 internal/ 各 markdown，抽取「结论（给 PM）」类小节，汇总为一份给 PM 的独立文档
 # trigger: manual
 # platform: unix
-# self-test: --self-test
+# cat: docs
+set -u
 
-set -eu
-MSG=""
+REPO=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "[pm-conclusions] 请在 git 仓库内运行"; exit 2; }
+cd "$REPO" || exit 2
 
 usage() {
-  cat <<'EOF'
-用法: pm-conclusions.sh [--json] [--self-test]
-  --json       输出一行 JSON 契约结论（message 内禁双引号）
-  --self-test  金丝雀自检（guard 类必实现）
+cat <<'EOF'
+pm-conclusions — 汇总「给 PM 的结论」小节为独立文档
+
+用法: toolbox run pm-conclusions [-o|--out <file>] [--dry-run] [--json] [-h]
+
+  -o, --out FILE   写入 markdown 文件（缺省打印到 stdout）
+  -n, --dry-run    只预览命中情况，不生成正文
+  --json           预检结论（单行 JSON，不生成本体）
+  -h, --help       本帮助
+
+抽取规则：扫描 docs/**/*.md 与 internal/*.md，命中二级标题含「给 PM」的
+小节（如「## 结论（给 PM）」「## 5. 对外口径摘要（给 PM 版…）」），
+截取到下一个二级标题为止。幂等，可安全重跑。
 EOF
 }
 
-run_checks() {
-  # TODO: 实现真实检查；失败把人话（问题本身+修复方向）写入 MSG 并 return 1
-  MSG="脚手架尚未实现检查逻辑"
-  return 1
+DRY_RUN=0
+OUT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -n|--dry-run) DRY_RUN=1; shift ;;
+    -o|--out) OUT="${2:-}"; [ -n "$OUT" ] || { echo "--out 需要文件路径"; exit 2; }; shift 2 ;;
+    --json) JSON_MODE=1; shift ;;
+    *) echo "未知参数: $1（见 --help）"; exit 2 ;;
+  esac
+done
+
+# 收集候选文件：docs/ 全部 md + internal/ 全部 md（按路径排序保证稳定输出）
+FILES=$( { find docs -name '*.md' 2>/dev/null; find internal -name '*.md' 2>/dev/null; } | sort )
+
+HITS=0
+PREVIEW=""
+BODY=""
+
+extract_section() {
+  # $1=文件路径；打印标题行与小节正文；无命中则返回非零
+  f="$1"
+  awk -v file="$f" '
+    /^## / {
+      if (insec) exit                       # 到下一个二级标题，小节结束
+      if ($0 ~ /给 ?PM/) { insec=1; print file "\t" $0 }
+      next
+    }
+    insec { print "\t" $0 }
+  ' "$f"
 }
 
-self_test() {
-  # TODO: 金丝雀——构造已知坏样本断言能抓到坏；好样本应通过
-  echo "self-test: 脚手架占位未实现真实检查，禁止登记"
-  return 2
-}
+for f in $FILES; do
+  [ -f "$f" ] || continue
+  # frontmatter 的 updated（如有）
+  UPDATED=$(sed -n '2,6{s/^updated:[[:space:]]*//p}' "$f" 2>/dev/null | head -1)
+  SEC=$(extract_section "$f") || true
+  [ -n "$SEC" ] || continue
+  HITS=$((HITS+1))
+  TITLE_LINE=$(printf '%s\n' "$SEC" | head -1 | cut -f2)
+  CONTENT=$(printf '%s\n' "$SEC" | tail -n +2 | sed 's/^\t//')
+  PREVIEW="$PREVIEW
+  - $f → $TITLE_LINE"
+  # 文档标题取首个一级标题（无则用文件名）
+  DOC_TITLE=$(grep -m1 '^# ' "$f" 2>/dev/null | sed 's/^# //')
+  [ -n "$DOC_TITLE" ] || DOC_TITLE="$f"
+  META="（来源：$f"
+  [ -n "$UPDATED" ] && META="$META，updated $UPDATED"
+  META="$META）"
+  BODY="$BODY
 
-case "${1-}" in
-  --self-test)
-    self_test
-    ;;
-  --json)
-    if run_checks; then
-      printf '{"status":"OK","severity":"info","message":"%s"}
-' "$MSG"
-      exit 0
-    fi
-    printf '{"status":"FAIL","severity":"warn","message":"%s"}
-' "$MSG"
-    exit 1
-    ;;
-  --help|-h)
-    usage
-    ;;
-  "")
-    if run_checks; then
-      echo "OK: $MSG"
-    else
-      echo "FAIL: $MSG"
-      exit 1
-    fi
-    ;;
-  *)
-    usage
-    exit 2
-    ;;
-esac
+## $DOC_TITLE
+$META
+
+$CONTENT
+---
+"
+done
+
+if [ "${JSON_MODE:-0}" = "1" ]; then
+  msg=$(printf '%s' "$HITS" | tr -d '"')
+  if [ "$HITS" -gt 0 ]; then
+    printf '{"status":"OK","severity":"info","message":"命中 %s 个给PM结论小节"}\n' "$msg"
+    exit 0
+  fi
+  printf '{"status":"FAIL","severity":"warn","message":"未命中任何给PM结论小节"}\n'
+  exit 1
+fi
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[dry-run] 命中 $HITS 个小节："
+  echo "$PREVIEW"
+  echo "[dry-run] 未写任何文件"
+  exit 0
+fi
+
+if [ "$HITS" -eq 0 ]; then
+  echo "未在任何文档中命中「给 PM」小节，未生成文件"
+  exit 1
+fi
+
+RESULT="# 校乐趣 · 各文档结论汇总（给 PM）（$(date +%F)）
+
+> 本文档由 \`toolbox run pm-conclusions\` 机械汇总自 docs/ 与 internal/ 各文档的「给 PM」结论小节，仅作聚合索引；细节以各源文档为准。
+$BODY"
+
+if [ -n "$OUT" ]; then
+  printf '%s\n' "$RESULT" > "$OUT"
+  echo "已生成: $OUT（命中 $HITS 个小节）"
+else
+  printf '%s\n' "$RESULT"
+fi
+exit 0
