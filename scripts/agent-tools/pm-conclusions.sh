@@ -4,7 +4,7 @@
 # toolbox-script
 # format: v1
 # name: pm-conclusions
-# summary: 扫描 docs/ 与 internal/ 各 markdown，抽取「结论（给 PM）」类小节，汇总为一份给 PM 的独立文档
+# summary: 扫描 docs/（公域）各 markdown，抽取「结论（给 PM）」类小节，汇总为一份给 PM 的独立文档
 # trigger: manual
 # platform: unix
 # cat: docs
@@ -24,9 +24,9 @@ pm-conclusions — 汇总「给 PM 的结论」小节为独立文档
   --json           预检结论（单行 JSON，不生成本体）
   -h, --help       本帮助
 
-抽取规则：扫描 docs/**/*.md 与 internal/*.md，命中二级标题含「给 PM」的
-小节（如「## 结论（给 PM）」「## 5. 对外口径摘要（给 PM 版…）」），
-截取到下一个二级标题为止。幂等，可安全重跑。
+抽取规则：仅扫描 docs/**/*.md（公域；internal/ 属内部域不汇总，避免谈判底稿流入公域），
+命中二级标题含「给 PM」的小节（如「## 结论（给 PM）」），截取到下一个二级标题为止。
+幂等，可安全重跑。
 EOF
 }
 
@@ -42,8 +42,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# 收集候选文件：docs/ 全部 md + internal/ 全部 md（按路径排序保证稳定输出）
-FILES=$( { find docs -name '*.md' 2>/dev/null; find internal -name '*.md' 2>/dev/null; } | sort )
+# 收集候选文件：docs/ 全部 md（公域；internal/ 属内部域，不汇总），按路径排序保证稳定输出；排除输出文件自身，避免自引用
+if [ -n "$OUT" ]; then
+  OUT_BASE=$(basename "$OUT")
+  FILES=$( find docs -name '*.md' 2>/dev/null | grep -v -F "/$OUT_BASE" | sort )
+else
+  FILES=$( find docs -name '*.md' 2>/dev/null | sort )
+fi
 
 HITS=0
 PREVIEW=""
@@ -111,9 +116,14 @@ if [ "$HITS" -eq 0 ]; then
   exit 1
 fi
 
-RESULT="# 校乐趣 · 各文档结论汇总（给 PM）（$(date +%F)）
+RESULT="---
+status: active
+updated: $(date +%F)
+---
 
-> 本文档由 \`toolbox run pm-conclusions\` 机械汇总自 docs/ 与 internal/ 各文档的「给 PM」结论小节，仅作聚合索引；细节以各源文档为准。
+# 校乐趣 · 各文档结论汇总（给 PM）（$(date +%F)）
+
+> 本文档由 \`toolbox run pm-conclusions\` 机械汇总自 docs/（公域）各文档的「给 PM」结论小节，仅作聚合索引；细节以各源文档为准。
 $BODY"
 
 if [ -n "$OUT" ]; then
