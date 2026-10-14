@@ -12,7 +12,7 @@ last-merge: none
 
 ## 决策
 
-- （空）
+- 2026-10-14：新增协调域 `docs/coord/`——写作对象是客户方协调人员（不是决定者），派生件两件：协调事项清单（四要素：确认人/材料/时间门槛/后果）+ 校园网校园卡对接函底稿；域表与协调域写作纪律已登记 xiaolequ-docs SKILL.md。
 
 ## 架构 / 事实
 
@@ -21,4 +21,6 @@ last-merge: none
 
 ## 进度 / 断点
 
-- 2026-10-13：接入 AI 协作骨架（context/ 记忆、xiaolequ-docs skill、AGENTS.md 会话初始化）。当前无未完任务。
+- 2026-10-13：接入 AI 协作骨架（context/ 记忆、xiaolequ-docs skill、AGENTS.md 会话初始化）。
+- 2026-10-14：协调域两件交付物成文，全链自检绿；修 pm-conclusions 小节跨目录链接断链 bug（ERE 括号转义）。
+- [断点] 等 PM 批注 D1~D8（推动物料在 docs/coord/协调事项清单-给协调人.md）；D1 对接函底稿已备好，渠道（校方/运营商）确认后 M0 内发出。

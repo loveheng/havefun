@@ -26,6 +26,7 @@ pm-conclusions — 汇总「给 PM 的结论」小节为独立文档
 
 抽取规则：仅扫描 docs/**/*.md（公域；internal/ 属内部域不汇总，避免谈判底稿流入公域），
 命中二级标题含「给 PM」的小节（如「## 结论（给 PM）」），截取到下一个二级标题为止。
+-o 写入文件时，自动把小节内指向源文件同目录的裸 .md 相对链接改写为输出目录相对路径（小节搬目录后防断链）。
 幂等，可安全重跑。
 EOF
 }
@@ -41,6 +42,9 @@ while [ $# -gt 0 ]; do
     *) echo "未知参数: $1（见 --help）"; exit 2 ;;
   esac
 done
+
+OUT_DIR=""
+if [ -n "$OUT" ]; then OUT_DIR=$(dirname "$OUT"); fi
 
 # 收集候选文件：docs/ 全部 md（公域；internal/ 属内部域，不汇总），按路径排序保证稳定输出；排除输出文件自身，避免自引用
 if [ -n "$OUT" ]; then
@@ -76,6 +80,18 @@ for f in $FILES; do
   HITS=$((HITS+1))
   TITLE_LINE=$(printf '%s\n' "$SEC" | head -1 | cut -f2)
   CONTENT=$(printf '%s\n' "$SEC" | tail -n +2 | sed 's/^\t//')
+  # -o 时：小节搬目录后，指向源文件同目录的裸 .md 链接改为输出目录相对路径（防断链）
+  if [ -n "$OUT_DIR" ]; then
+    SRC_DIR=$(dirname "$f")
+    if [ "$SRC_DIR" != "$OUT_DIR" ] && [ "$(dirname "$SRC_DIR")" = "$(dirname "$OUT_DIR")" ]; then
+      for t in $(printf '%s\n' "$CONTENT" | grep -oE '\]\([^)]+\.md\)' | sed -E 's/^\]\(//; s/\)$//' | sort -u); do
+        case "$t" in */*|.*|*://*) continue ;; esac
+        [ -f "$SRC_DIR/$t" ] || continue
+        t_pat=$(printf '%s' "$t" | sed 's/\./\\./g')
+        CONTENT=$(printf '%s\n' "$CONTENT" | sed -E "s|\\]\\($t_pat\\)|](../$(basename "$SRC_DIR")/$t)|g")
+      done
+    fi
+  fi
   PREVIEW="$PREVIEW
   - $f → $TITLE_LINE"
   # 文档标题取首个一级标题（无则用文件名）
